@@ -5,7 +5,7 @@
 #define FLASH_SIZE (64 * 1024) //(FLASH_BANK1_END - FLASH_BASE + 1)
 
 #define BOOT_LOADER_ADDR FLASH_BASE
-#define BOOT_LOADER_SIZE (6 * 1024)
+#define BOOT_LOADER_SIZE (4 * 1024)
 #define APP_ADDR (BOOT_LOADER_ADDR + BOOT_LOADER_SIZE)
 #define APP_SIZE ((FLASH_SIZE - BOOT_LOADER_SIZE - APP_PARA_SIZE - APP_PARA_BACKUP_SIZE) / 2)
 #define APP_BACKUP_ADDR (APP_ADDR + APP_SIZE)
@@ -33,7 +33,7 @@ struct upgrade_data_t {
 
 struct upgrade_data_t upgrade_data;
 
-HAL_StatusTypeDef flash_erase(uint32_t addr, uint32_t size)
+static HAL_StatusTypeDef flash_erase(uint32_t addr, uint32_t size)
 {
   uint32_t PageError;
   FLASH_EraseInitTypeDef def;
@@ -58,11 +58,10 @@ HAL_StatusTypeDef flash_erase(uint32_t addr, uint32_t size)
   return status;
 }
 
-void flash_write(uint32_t addr, uint16_t * data, uint32_t data_len)
+static void flash_write(uint32_t addr, uint16_t * data, uint32_t data_len)
 {
   uint16_t i;
   
-  //__set_PRIMASK(1);
   HAL_FLASH_Unlock();
   
   __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPTVERR | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
@@ -73,17 +72,10 @@ void flash_write(uint32_t addr, uint16_t * data, uint32_t data_len)
   }
   
   HAL_FLASH_Lock();
-  //__set_PRIMASK(0);
 }
 
 static void set_upgrade_status(uint8_t upgrade_status)
 {
-  /*upgrade_data.upgrade_status = upgrade_status;
-  
-  flash_erase(BOOT_LOADER_PARA_ADDR, BOOT_LOADER_PARA_SIZE);
-  
-  flash_write(BOOT_LOADER_PARA_ADDR, (uint16_t *)&upgrade_data, sizeof(struct upgrade_data_t));*/
-  
   FLASH_OBProgramInitTypeDef OBInit;
   
   HAL_FLASHEx_OBGetConfig(&OBInit);
@@ -100,6 +92,7 @@ static void set_upgrade_status(uint8_t upgrade_status)
   HAL_FLASH_OB_Lock();
   HAL_FLASH_Lock();
   
+  __set_FAULTMASK(1);
   HAL_FLASH_OB_Launch();
 }
 
@@ -179,10 +172,11 @@ static void jump2app(void)
   //asm("bx %0"::"r"(app_start_address));
 }
 
+uint8_t buf[FLASH_PAGE_SIZE];
 void upgrade(void)
 {
   uint32_t i;
-  uint8_t buf[256];
+
   
   if (!check_upgrade())
   {
@@ -191,10 +185,10 @@ void upgrade(void)
   
   flash_erase(APP_ADDR, APP_SIZE);
   
-  for (i = 0; i < upgrade_data.upgrade_fileLength; i += 256)
+  for (i = 0; i < upgrade_data.upgrade_fileLength; i += FLASH_PAGE_SIZE)
   {
-    memcpy(buf, (void*)(APP_BACKUP_ADDR + i), 256);
-    flash_write(APP_ADDR + i, (uint16_t *)buf, 256);
+    memcpy(buf, (void*)(APP_BACKUP_ADDR + i), FLASH_PAGE_SIZE);
+    flash_write(APP_ADDR + i, (uint16_t *)buf, FLASH_PAGE_SIZE);
   }
   
   set_upgrade_status(UPGRADE_SUCCESS);
