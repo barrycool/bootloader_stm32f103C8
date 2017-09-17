@@ -53,3 +53,4 @@ dkms.conf
 /build
 /EWARM/settings
 bootloader_stm32f103C8
+/EWARM/*.dep
