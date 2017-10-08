@@ -58,6 +58,7 @@ static HAL_StatusTypeDef flash_erase(uint32_t addr, uint32_t size)
   return status;
 }
 
+HAL_StatusTypeDef flash_stats;
 static void flash_write(uint32_t addr, uint16_t * data, uint32_t data_len)
 {
   uint16_t i;
@@ -68,7 +69,7 @@ static void flash_write(uint32_t addr, uint16_t * data, uint32_t data_len)
 
   for (i = 0; i < data_len / 2; i++)
   {
-    HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, addr + i * 2, data[i]);
+    flash_stats = HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, addr + i * 2, data[i]);
   }
   
   HAL_FLASH_Lock();
@@ -172,24 +173,43 @@ static void jump2app(void)
   //asm("bx %0"::"r"(app_start_address));
 }
 
+uint32_t crc32;
 uint8_t buf[FLASH_PAGE_SIZE];
 void upgrade(void)
 {
   uint32_t i;
-
+  uint32_t *app_start_addr = (uint32_t *)APP_ADDR;
   
   if (!check_upgrade())
   {
     jump2app();
   }
   
+  __set_FAULTMASK(1);
   flash_erase(APP_ADDR, APP_SIZE);
   
   for (i = 0; i < upgrade_data.upgrade_fileLength; i += FLASH_PAGE_SIZE)
   {
     memcpy(buf, (void*)(APP_BACKUP_ADDR + i), FLASH_PAGE_SIZE);
+    if (memcmp(buf, (void*)(APP_BACKUP_ADDR + i), FLASH_PAGE_SIZE))
+    {
+      while(1);
+    }
     flash_write(APP_ADDR + i, (uint16_t *)buf, FLASH_PAGE_SIZE);
+    if (memcmp(buf, (void*)(APP_ADDR + i), FLASH_PAGE_SIZE))
+    {
+      while(1);
+    }
   }
   
-  set_upgrade_status(UPGRADE_SUCCESS);
+  crc32 = HAL_CRC_Calculate(&hcrc, app_start_addr, upgrade_data.upgrade_fileLength / 4);
+  if (crc32 == upgrade_data.upgrade_crc32)
+  {
+    set_upgrade_status(UPGRADE_SUCCESS);
+  }
+  else
+  {
+    while(1);
+    //HAL_FLASH_OB_Launch();
+  }
 }
